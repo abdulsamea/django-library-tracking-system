@@ -61,7 +61,7 @@ class MemberViewSet(viewsets.ModelViewSet):
             .order_by("-active_loans", "id")[:5]
         )
 
-        serialized_data = self.get_serializer(qs)
+        serialized_data = self.get_serializer(qs, many=True)
         return Response(serialized_data.data)
     
 
