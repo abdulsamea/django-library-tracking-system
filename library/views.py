@@ -5,6 +5,9 @@ from .serializers import AuthorSerializer, BookSerializer, MemberSerializer, Loa
 from rest_framework.decorators import action
 from django.utils import timezone
 from .tasks import send_loan_notification
+from .paginations import DefaultViewPagination
+from django.db import transaction
+from django.db.models import Count, Q
 
 class AuthorViewSet(viewsets.ModelViewSet):
     queryset = Author.objects.all()
@@ -13,6 +16,7 @@ class AuthorViewSet(viewsets.ModelViewSet):
 class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
+    pagination_class= DefaultViewPagination
 
     @action(detail=True, methods=['post'])
     def loan(self, request, pk=None):
@@ -49,6 +53,44 @@ class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.all()
     serializer_class = MemberSerializer
 
+    @action(detail=False, methods=['get'])
+    def top_active(self, request):
+        qs = (
+            Member.objects
+            .annotate(active_loans=Count("loans", filter=Q(loans__is_returned=False)))
+            .order_by("-active_loans", "id")[:5]
+        )
+
+        serialized_data = self.get_serializer(qs)
+        return Response(serialized_data.data)
+    
+
 class LoanViewSet(viewsets.ModelViewSet):
     queryset = Loan.objects.all()
     serializer_class = LoanSerializer
+
+    @action(detail=True, methods=['post'])
+    def extend_due_date(self, request, pk=None):
+        loan = self.get_object()
+        now = timezone.now()
+
+        if loan.due_date < now:
+            return Response({"error": "Loan is overdue"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        additional_days_input = request.data.get("additional_days")
+
+        try:
+            additional_days = int(additional_days_input)
+        
+        except (TypeError, ValueError):
+            return Response({"error": "Additional days must be a positive integer"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if additional_days <= 0:
+            return Response({"error": "Additional days must be a more than 1"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        with transaction.atomic():
+            loan.due_date = due_date + timedelta(days=additional_days)
+            loan.save()
+
+        serialized_data = self.get_serializer(loan)
+        return Response({serialized_data.data}, status=status.HTTP_200_OK)

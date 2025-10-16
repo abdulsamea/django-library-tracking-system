@@ -11,6 +11,6 @@ app.autodiscover_tasks()
 app.conf.beat_schedule = {
     'check_overdue_loans': {
         "task": "library.tasks.check_overdue_loans",
-        "schedule": crontab(hours=12)
+        "schedule": crontab(hour=12)
     }
 }
